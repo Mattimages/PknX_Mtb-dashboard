@@ -2,11 +2,12 @@ import streamlit as st
 import pandas as pd
 import math
 from pathlib import Path
+import plotly.express as px
 
 # Set the title and favicon that appear in the Browser's tab bar.
 st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
+    page_title='PknX dashboard',
+    page_icon=':microbe:', # This is an emoji shortcode. Could be a URL too.
 )
 
 # -----------------------------------------------------------------------------
@@ -22,130 +23,135 @@ def get_gdp_data():
     """
 
     # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+    DATA_FILENAME = Path(__file__).parent/'data/Big_data_sup2.csv'
+    raw_data_df = pd.read_csv(DATA_FILENAME)
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+    raw_data_df['Fold-change (log2)'] = raw_data_df['Fold-change (log2)'].fillna(15)
+    
+    return raw_data_df
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
-
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
-
-    return gdp_df
-
-gdp_df = get_gdp_data()
+PknX_df = get_gdp_data()
 
 # -----------------------------------------------------------------------------
 # Draw the actual page
 
 # Set the title that appears at the top of the page.
 '''
-# :earth_americas: GDP dashboard
+# :microbe: PknX dashboard
 
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
+Browse expression data from [Frando et al.](https://www-nature-com.vu-nl.idm.oclc.org/articles/s41564-022-01313-7#Sec26). 
+
 '''
 
 # Add some spacing
 ''
 ''
 
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
+min_value = PknX_df['Fold-change (log2)'].min()
+max_value = PknX_df['Fold-change (log2)'].max()
 
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
+from_Ascore, to_Ascore = st.slider(
+    'Which Log2fold change are you interested in? ',
     min_value=min_value,
     max_value=max_value,
     value=[min_value, max_value])
 
-countries = gdp_df['Country Code'].unique()
+Enzymes = PknX_df['STPK'].unique()
 
-if not len(countries):
+if not len(Enzymes):
     st.warning("Select at least one country")
 
 selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
+    'Which kinases would you like to view?',
+    Enzymes,
+    ['PknB', 'PknD', 'PknE', 'PknF', 'PknG', 'PknH', 'PknI', 'PknJ', 'PknK', 'PknL'])
+""
+"" 
+""
+Experiments = PknX_df['Mutant'].unique()
 
+if not len(Enzymes):
+    st.warning("Select at least one country")
+
+
+selected_experiments = st.multiselect(
+    'Which experiments would you like to view? (Overexpression or Loss of Function)', 
+    Experiments,
+    ["OE", "LOF"])
 ''
 ''
 ''
 
 # Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
+PknX_df["rv_sort"] = (
+    PknX_df["Rv Number"]
+    .str.replace(r"^Rv", "", regex=True)
+    .str.replace(r"[a-zA-Z]$", ".1", regex=True)
+    .astype(float)
 )
+PknX_df = PknX_df.sort_values(by="rv_sort", ascending=True)
+filtered_PknX_df = PknX_df[
+    (PknX_df['STPK'].isin(selected_countries))
+    &(PknX_df['Mutant'].isin(selected_experiments))
+    & (PknX_df['Fold-change (log2)'] <= to_Ascore)
+    & (from_Ascore <= PknX_df['Fold-change (log2)'])
+]
+# Search bar
+search = st.text_input("Search for a protein:")
+
+# Filter DataFrame based on search input (case-insensitive)
+if search:
+    filtered_PknX_df = filtered_PknX_df[filtered_PknX_df["Rv Number"].str.contains(search, case=False, na=False)]
+else:
+    None
+#st.header('GDP over time', divider='gray')
 
 ''
-''
 
 
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
 
-st.header(f'GDP in {to_year}', divider='gray')
+##make it specific for a selected protein
 
 ''
+fig = px.scatter(
+    filtered_PknX_df,
+    x='rv_sort',
+    y='Fold-change (log2)',
+    #size="size",
+    hover_name="Phosphosite",
+    color="STPK",
+    title="Interactive Bubble Plot"
+)
+''
+st.plotly_chart(fig)
 
-cols = st.columns(4)
+#first_year = gdp_df[gdp_df['Year'] == from_year]
+#last_year = gdp_df[gdp_df['Year'] == to_year]
+#
+#st.header(f'GDP in {to_year}', divider='gray')
 
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
+''
 
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
+#cols = st.columns(4)
 
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
+#for i, country in enumerate(selected_countries):
+ #   col = cols[i % len(cols)]
 
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+ #   with col:
+  #      first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
+ #       last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
+#
+ #       if math.isnan(first_gdp):
+ #           growth = 'n/a'
+ #           delta_color = 'off'
+#        else:
+  #          growth = f'{last_gdp / first_gdp:,.2f}x'
+  #          delta_color = 'normal'
+#
+ #       st.metric(
+ #           label=f'{country} GDP',
+ #           value=f'{last_gdp:,.0f}B',
+#            delta=growth,
+#            delta_color=delta_color
+#        )
+#
